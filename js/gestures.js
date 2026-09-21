@@ -1,7 +1,6 @@
 import * as THREE from '../lib/three.module.min.js';
 
 const ROTATE_SPEED = 0.008;
-const PHI_EPS = 0.05;
 const SWIPE_THRESHOLD = 0.18; // distancia mínima (unidades de mundo) para contar como swipe
 const MIN_RADIUS = 4;
 const MAX_RADIUS = 16;
@@ -29,17 +28,23 @@ function axisLabelOf(v) {
 
 /**
  * Controles combinados sobre el canvas del cubo:
- * - Arrastre que empieza en el "aire" (fuera de cualquier cubie) => orbit de cámara.
+ * - Arrastre que empieza en el "aire" (fuera de cualquier cubie) => orbit de cámara
+ *   estilo "trackball" (por cuaterniones), sin límite de polos: se puede dar vuelta
+ *   el cubo completamente para poner cualquier cara/color arriba.
  * - Arrastre que empieza sobre una cara de un cubie => swipe para girar la capa
  *   correspondiente. La dirección/sentido se calcula proyectando el swipe sobre
  *   el plano 3D de la cara tocada (no depende de heurísticas de pantalla).
  */
 export function attachControls({ camera, canvas, cubeGroup, cube, target = new THREE.Vector3(0, 0, 0), onMoveApplied }) {
-  const spherical = new THREE.Spherical();
+  // Órbita libre tipo trackball: guardamos el offset cámara->target y el vector "up"
+  // de la cámara, y rotamos ambos con cuaterniones. Al no usar ángulos de Euler con
+  // polo fijo, no hay gimbal lock ni límite de inclinación: se puede voltear el cubo
+  // por completo (por ejemplo, poner la cara amarilla arriba).
   const offset = new THREE.Vector3();
   offset.copy(camera.position).sub(target);
-  spherical.setFromVector3(offset);
-  const initialRadius = spherical.radius;
+  const initialRadius = offset.length();
+  let radius = initialRadius;
+  const up = camera.up.clone().normalize();
 
   const raycaster = new THREE.Raycaster();
   const plane = new THREE.Plane();
@@ -61,13 +66,41 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
     return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
   }
 
-  function updateCameraFromSpherical() {
-    spherical.phi = Math.max(PHI_EPS, Math.min(Math.PI - PHI_EPS, spherical.phi));
-    offset.setFromSpherical(spherical);
+  function updateCamera() {
+    camera.up.copy(up);
     camera.position.copy(target).add(offset);
     camera.lookAt(target);
   }
-  updateCameraFromSpherical();
+  updateCamera();
+
+  function setRadius(r) {
+    radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, r));
+    offset.setLength(radius);
+  }
+
+  function applyOrbitDelta(dx, dy) {
+    const forward = offset.clone().normalize();
+    let right = new THREE.Vector3().crossVectors(up, forward);
+    if (right.lengthSq() < 1e-6) {
+      // forward casi paralelo a up (justo en un "polo"): usamos un eje de respaldo
+      // arbitrario para poder seguir girando sin trabarse.
+      right = new THREE.Vector3(1, 0, 0);
+    } else {
+      right.normalize();
+    }
+
+    // Arrastre horizontal: gira alrededor del "up" actual de la cámara (no cambia up).
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(up, -dx * ROTATE_SPEED);
+    offset.applyQuaternion(qYaw);
+
+    // Arrastre vertical: gira alrededor del eje "right", inclinando también el "up"
+    // (esto es lo que permite pasar de largo los polos y voltear el cubo del todo).
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(right, -dy * ROTATE_SPEED);
+    offset.applyQuaternion(qPitch);
+    up.applyQuaternion(qPitch);
+
+    updateCamera();
+  }
 
   function ndcFromEvent(e) {
     const rect = canvas.getBoundingClientRect();
@@ -120,7 +153,7 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
       swipeNormal = null;
       swipeStartPoint = null;
       pinchStartDistance = pointerDistance();
-      pinchStartRadius = spherical.radius;
+      pinchStartRadius = radius;
       return;
     }
 
@@ -154,8 +187,8 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
       if (activePointers.size < 2 || pinchStartDistance <= 0) return;
       const dist = pointerDistance();
       const ratio = pinchStartDistance / dist;
-      spherical.radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, pinchStartRadius * ratio));
-      updateCameraFromSpherical();
+      setRadius(pinchStartRadius * ratio);
+      updateCamera();
       return;
     }
 
@@ -164,9 +197,7 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
     const dy = e.clientY - lastY;
     lastX = e.clientX;
     lastY = e.clientY;
-    spherical.theta -= dx * ROTATE_SPEED;
-    spherical.phi -= dy * ROTATE_SPEED;
-    updateCameraFromSpherical();
+    applyOrbitDelta(dx, dy);
   }
 
   function onPointerUp(e) {
@@ -195,7 +226,7 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
         // en unidades de pantalla: si la cámara está más cerca (zoom), el mismo gesto
         // físico recorre menos "mundo", así que escalamos el umbral con el zoom actual
         // para mantener una sensibilidad consistente en cualquier nivel de zoom.
-        const effectiveThreshold = SWIPE_THRESHOLD * (spherical.radius / initialRadius);
+        const effectiveThreshold = SWIPE_THRESHOLD * (radius / initialRadius);
         if (swipeVec.length() > effectiveThreshold) {
           resolveSwipeMove(swipeVec);
         }
@@ -210,8 +241,8 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
   function onWheel(e) {
     e.preventDefault();
     const scale = Math.exp(e.deltaY * 0.001);
-    spherical.radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, spherical.radius * scale));
-    updateCameraFromSpherical();
+    setRadius(radius * scale);
+    updateCamera();
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);
