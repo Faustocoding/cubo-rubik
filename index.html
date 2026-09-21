@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>Cubo Rubik</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#111318" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Cubo Rubik" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <button id="menuBtn" class="icon-btn" aria-label="Menú">☰</button>
+      <div id="stats">
+        <span id="timer">00:00.0</span>
+        <span id="moveCounter">0 moves</span>
+      </div>
+      <div class="icon-btn-spacer"></div>
+    </header>
+
+    <main id="cubeContainer">
+      <canvas id="cubeCanvas"></canvas>
+    </main>
+
+    <div id="debugPanel">
+      <div id="debugStatus">estado: —</div>
+      <div id="debugMoves"></div>
+    </div>
+
+    <footer id="controls">
+      <button id="btnUndo" class="ctrl-btn">Deshacer</button>
+      <button id="btnScramble" class="ctrl-btn">Mezclar</button>
+      <button id="btnReset" class="ctrl-btn">Reiniciar</button>
+    </footer>
+  </div>
+
+  <div id="menuOverlay" class="overlay hidden">
+    <div class="overlay-content">
+      <div class="overlay-header">
+        <h2>Menú</h2>
+        <button id="closeMenu" class="icon-btn">✕</button>
+      </div>
+      <button id="openTop" class="menu-item">🏆 Top / Historial</button>
+      <button id="openInstructions" class="menu-item">📖 Instrucciones</button>
+    </div>
+  </div>
+
+  <div id="topOverlay" class="overlay hidden">
+    <div class="overlay-content">
+      <div class="overlay-header">
+        <h2>Historial</h2>
+        <button id="closeTop" class="icon-btn">✕</button>
+      </div>
+
+      <div id="statsRow" class="stats-row">
+        <div class="stat">
+          <span class="stat-label">Mejor</span>
+          <span id="statBest" class="stat-value">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Prom. 5</span>
+          <span id="statAvg5" class="stat-value">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Prom. 12</span>
+          <span id="statAvg12" class="stat-value">—</span>
+        </div>
+      </div>
+
+      <div class="sort-row">
+        <button id="sortByTime" class="chip active">Ordenar por tiempo</button>
+        <button id="sortByMoves" class="chip">Ordenar por movimientos</button>
+      </div>
+
+      <div class="table-wrap">
+        <table id="historyTable">
+          <thead>
+            <tr><th>#</th><th>Fecha</th><th>Movs</th><th>Tiempo</th></tr>
+          </thead>
+          <tbody id="historyTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="instructionsOverlay" class="overlay hidden">
+    <div class="overlay-content">
+      <div class="overlay-header">
+        <h2>Instrucciones</h2>
+        <button id="closeInstructions" class="icon-btn">✕</button>
+      </div>
+
+      <p id="instructionsPlaceholder" class="instructions-placeholder">
+        Todavía no subiste ninguna imagen. Podés subir una captura o foto con tu método de resolución.
+      </p>
+      <img id="instructionsImage" class="instructions-image hidden" alt="Método de resolución" />
+
+      <div class="instructions-actions">
+        <button id="btnUploadInstructions" class="ctrl-btn">🖼️ Subir imagen</button>
+        <button id="btnClearInstructions" class="ctrl-btn danger hidden">🗑️ Quitar</button>
+      </div>
+      <input id="instructionsFileInput" type="file" accept="image/*" class="hidden" />
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
