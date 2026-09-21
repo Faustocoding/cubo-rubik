@@ -56,14 +56,22 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
   let swipeNormal = null;
   let swipeStartPoint = null;
 
-  // Pinch-to-zoom con dos dedos (Paso 13)
+  // Pinch-to-zoom con dos dedos (Paso 13) + torsión con dos dedos para enderezar
+  // la vista si quedó inclinada (pedido del usuario tras habilitar el orbit libre).
   const activePointers = new Map(); // pointerId -> {x, y}
   let pinchStartDistance = 0;
   let pinchStartRadius = 0;
+  let pinchStartAngle = 0;
+  let pinchStartUp = null;
 
   function pointerDistance() {
     const pts = [...activePointers.values()];
     return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+
+  function pointerAngle() {
+    const pts = [...activePointers.values()];
+    return Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
   }
 
   function updateCamera() {
@@ -78,20 +86,27 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
     offset.setLength(radius);
   }
 
-  function applyOrbitDelta(dx, dy) {
-    const forward = offset.clone().normalize();
+  function computeRight(forward) {
     let right = new THREE.Vector3().crossVectors(up, forward);
     if (right.lengthSq() < 1e-6) {
       // forward casi paralelo a up (justo en un "polo"): usamos un eje de respaldo
       // arbitrario para poder seguir girando sin trabarse.
-      right = new THREE.Vector3(1, 0, 0);
-    } else {
-      right.normalize();
+      return new THREE.Vector3(1, 0, 0);
     }
+    return right.normalize();
+  }
 
+  function applyOrbitDelta(dx, dy) {
     // Arrastre horizontal: gira alrededor del "up" actual de la cámara (no cambia up).
     const qYaw = new THREE.Quaternion().setFromAxisAngle(up, -dx * ROTATE_SPEED);
     offset.applyQuaternion(qYaw);
+
+    // IMPORTANTE: recalculamos "right" recién ACÁ, con el "forward" ya actualizado
+    // por el yaw. Si se usara el "right" de antes del yaw (bug anterior), el pitch
+    // quedaba levemente desalineado y cada arrastre diagonal (lo normal al deslizar
+    // el dedo) sumaba una rotación de más, inclinando el cubo de a poco con el tiempo.
+    const forward = offset.clone().normalize();
+    const right = computeRight(forward);
 
     // Arrastre vertical: gira alrededor del eje "right", inclinando también el "up"
     // (esto es lo que permite pasar de largo los polos y voltear el cubo del todo).
@@ -154,6 +169,8 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
       swipeStartPoint = null;
       pinchStartDistance = pointerDistance();
       pinchStartRadius = radius;
+      pinchStartAngle = pointerAngle();
+      pinchStartUp = up.clone();
       return;
     }
 
@@ -188,6 +205,16 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
       const dist = pointerDistance();
       const ratio = pinchStartDistance / dist;
       setRadius(pinchStartRadius * ratio);
+
+      // Torsión con dos dedos: girar el par de dedos (como girar una perilla) rota
+      // la vista alrededor del eje de visión (roll), sin cambiar hacia dónde mira la
+      // cámara. Sirve para "enderezar" el cubo si el orbit libre lo dejó inclinado.
+      const angle = pointerAngle();
+      const deltaAngle = angle - pinchStartAngle;
+      const forward = offset.clone().normalize();
+      const qRoll = new THREE.Quaternion().setFromAxisAngle(forward, deltaAngle);
+      up.copy(pinchStartUp).applyQuaternion(qRoll);
+
       updateCamera();
       return;
     }
