@@ -8,6 +8,7 @@ import { formatTime } from './timer.js';
 import {
   getHistory, addSolve, computeStats,
   getInstructionsImage, setInstructionsImage, clearInstructionsImage,
+  getFreeMode, setFreeMode,
 } from './storage.js';
 import { renderHistoryTable, renderStats } from './ui.js';
 
@@ -44,6 +45,9 @@ const cube = new RubikCube(cubeGroup, scene);
 const timerEl = document.getElementById('timer');
 const moveCounterEl = document.getElementById('moveCounter');
 
+// --- Modo libre (Paso 12): practicar sin cronómetro ni guardar en el historial ---
+let freeMode = getFreeMode();
+
 const session = new SolveSession(cube, {
   onTick: (ms) => { timerEl.textContent = formatTime(ms); },
   onMoveCountChange: (n) => { moveCounterEl.textContent = `${n} moves`; },
@@ -61,7 +65,7 @@ attachControls({
   cubeGroup,
   cube,
   target: new THREE.Vector3(0, 0, 0),
-  onMoveApplied: () => session.registerUserMove(),
+  onMoveApplied: () => { if (!freeMode) session.registerUserMove(); },
 });
 
 // --- Panel de debug temporal (Paso 3): botones de moves + estado resuelto ---
@@ -78,7 +82,7 @@ MOVES.forEach((notation) => {
   btn.textContent = notation;
   btn.addEventListener('click', () => {
     cube.move(notation).then(() => {
-      session.registerUserMove();
+      if (!freeMode) session.registerUserMove();
       refreshStatus();
     });
   });
@@ -104,7 +108,7 @@ btnScramble.addEventListener('click', async () => {
   const seq = generateScramble(20);
   debugScrambleText.textContent = 'scramble: ' + seq.join(' ');
   await cube.applyScramble(seq);
-  session.markScrambled();
+  if (!freeMode) session.markScrambled();
   refreshStatus();
   setControlsEnabled(true);
 });
@@ -113,7 +117,7 @@ btnScramble.addEventListener('click', async () => {
 const btnUndo = document.getElementById('btnUndo');
 btnUndo.addEventListener('click', async () => {
   const undone = await cube.undo();
-  if (undone) {
+  if (undone && !freeMode) {
     session.registerUndo();
   }
   refreshStatus();
@@ -228,6 +232,28 @@ instructionsFileInput.addEventListener('change', () => {
 btnClearInstructions.addEventListener('click', () => {
   clearInstructionsImage();
   refreshInstructionsPanel();
+});
+
+// --- Toggle de Modo libre (Paso 12) ---
+const freeModeToggle = document.getElementById('freeModeToggle');
+freeModeToggle.checked = freeMode;
+applyFreeModeUI();
+
+function applyFreeModeUI() {
+  timerEl.classList.toggle('free-mode', freeMode);
+  moveCounterEl.classList.toggle('hidden', freeMode);
+  if (freeMode) {
+    timerEl.textContent = 'Modo libre 🎯';
+  } else {
+    timerEl.textContent = formatTime(session.stopwatch.getElapsedMs());
+  }
+}
+
+freeModeToggle.addEventListener('change', () => {
+  freeMode = freeModeToggle.checked;
+  setFreeMode(freeMode);
+  session.reset();
+  applyFreeModeUI();
 });
 
 function resize() {

@@ -1,5 +1,6 @@
 const HISTORY_KEY = 'rubik.history.v1';
 const INSTRUCTIONS_KEY = 'rubik.instructions.v1';
+const FREE_MODE_KEY = 'rubik.freeMode.v1';
 
 export function getHistory() {
   try {
@@ -70,5 +71,22 @@ export function clearInstructionsImage() {
     localStorage.removeItem(INSTRUCTIONS_KEY);
   } catch (err) {
     console.warn('No se pudo borrar la imagen de instrucciones', err);
+  }
+}
+
+/** Preferencia de "Modo libre" (practicar sin cronómetro ni historial). */
+export function getFreeMode() {
+  try {
+    return localStorage.getItem(FREE_MODE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setFreeMode(enabled) {
+  try {
+    localStorage.setItem(FREE_MODE_KEY, enabled ? '1' : '0');
+  } catch (err) {
+    console.warn('No se pudo guardar la preferencia de modo libre', err);
   }
 }
