@@ -68,6 +68,7 @@ html, body {
 }
 
 #debugPanel {
+  display: none; /* panel de debug oculto: ya no hace falta, los gestos táctiles andan bien */
   flex-shrink: 0;
   padding: 6px 10px;
   font-size: 12px;
