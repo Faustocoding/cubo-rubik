@@ -2,7 +2,9 @@ import * as THREE from '../lib/three.module.min.js';
 
 const ROTATE_SPEED = 0.008;
 const PHI_EPS = 0.05;
-const SWIPE_THRESHOLD = 0.35; // distancia mínima (unidades de mundo) para contar como swipe
+const SWIPE_THRESHOLD = 0.18; // distancia mínima (unidades de mundo) para contar como swipe
+const MIN_RADIUS = 4;
+const MAX_RADIUS = 16;
 
 const AXIS_TO_FACE = {
   x: { 1: 'R', '-1': 'L' },
@@ -37,16 +39,27 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
   const offset = new THREE.Vector3();
   offset.copy(camera.position).sub(target);
   spherical.setFromVector3(offset);
+  const initialRadius = spherical.radius;
 
   const raycaster = new THREE.Raycaster();
   const plane = new THREE.Plane();
 
-  let mode = null; // 'orbit' | 'swipe'
+  let mode = null; // 'orbit' | 'swipe' | 'pinch'
   let lastX = 0;
   let lastY = 0;
   let swipeCubie = null;
   let swipeNormal = null;
   let swipeStartPoint = null;
+
+  // Pinch-to-zoom con dos dedos (Paso 13)
+  const activePointers = new Map(); // pointerId -> {x, y}
+  let pinchStartDistance = 0;
+  let pinchStartRadius = 0;
+
+  function pointerDistance() {
+    const pts = [...activePointers.values()];
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
 
   function updateCameraFromSpherical() {
     spherical.phi = Math.max(PHI_EPS, Math.min(Math.PI - PHI_EPS, spherical.phi));
@@ -97,6 +110,20 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
   }
 
   function onPointerDown(e) {
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+
+    if (activePointers.size >= 2) {
+      // Segundo dedo apoyado: arrancar pinch-zoom y cancelar cualquier swipe/orbit en curso.
+      mode = 'pinch';
+      swipeCubie = null;
+      swipeNormal = null;
+      swipeStartPoint = null;
+      pinchStartDistance = pointerDistance();
+      pinchStartRadius = spherical.radius;
+      return;
+    }
+
     lastX = e.clientX;
     lastY = e.clientY;
 
@@ -116,11 +143,22 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
     } else {
       mode = 'orbit';
     }
-
-    canvas.setPointerCapture(e.pointerId);
   }
 
   function onPointerMove(e) {
+    if (activePointers.has(e.pointerId)) {
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (mode === 'pinch') {
+      if (activePointers.size < 2 || pinchStartDistance <= 0) return;
+      const dist = pointerDistance();
+      const ratio = pinchStartDistance / dist;
+      spherical.radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, pinchStartRadius * ratio));
+      updateCameraFromSpherical();
+      return;
+    }
+
     if (mode !== 'orbit') return;
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
@@ -132,11 +170,33 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
   }
 
   function onPointerUp(e) {
+    activePointers.delete(e.pointerId);
+    try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+
+    if (mode === 'pinch') {
+      if (activePointers.size >= 2) return; // todavía quedan 2+ dedos (raro, pero por las dudas)
+      if (activePointers.size === 1) {
+        // Queda un dedo: retomar orbit desde su posición actual, sin salto brusco.
+        const [, p] = [...activePointers.entries()][0];
+        lastX = p.x;
+        lastY = p.y;
+        mode = 'orbit';
+      } else {
+        mode = null;
+      }
+      return;
+    }
+
     if (mode === 'swipe') {
       const endPoint = pointOnPlane(e);
       if (endPoint) {
         const swipeVec = endPoint.clone().sub(swipeStartPoint);
-        if (swipeVec.length() > SWIPE_THRESHOLD) {
+        // El umbral se mide en unidades de mundo, pero el swipe se hace con el dedo
+        // en unidades de pantalla: si la cámara está más cerca (zoom), el mismo gesto
+        // físico recorre menos "mundo", así que escalamos el umbral con el zoom actual
+        // para mantener una sensibilidad consistente en cualquier nivel de zoom.
+        const effectiveThreshold = SWIPE_THRESHOLD * (spherical.radius / initialRadius);
+        if (swipeVec.length() > effectiveThreshold) {
           resolveSwipeMove(swipeVec);
         }
       }
@@ -145,13 +205,20 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
     swipeCubie = null;
     swipeNormal = null;
     swipeStartPoint = null;
-    try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+  }
+
+  function onWheel(e) {
+    e.preventDefault();
+    const scale = Math.exp(e.deltaY * 0.001);
+    spherical.radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, spherical.radius * scale));
+    updateCameraFromSpherical();
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerUp);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
 
   return {
     dispose() {
@@ -159,6 +226,7 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
+      canvas.removeEventListener('wheel', onWheel);
     },
   };
 }
