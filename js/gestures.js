@@ -17,6 +17,11 @@ const AXIS_VECTORS = {
   z: new THREE.Vector3(0, 0, 1),
 };
 
+// Eje vertical fijo del mundo: el arrastre horizontal SIEMPRE gira alrededor de este
+// eje (no del "up" actual de la cámara), así el gesto de ir para el costado siempre
+// es un giro horizontal puro, sin sumar inclinación aunque la vista ya esté inclinada.
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
 function axisLabelOf(v) {
   const ax = Math.abs(v.x);
   const ay = Math.abs(v.y);
@@ -97,14 +102,15 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
   }
 
   function applyOrbitDelta(dx, dy) {
-    // Arrastre horizontal: gira alrededor del "up" actual de la cámara (no cambia up).
-    const qYaw = new THREE.Quaternion().setFromAxisAngle(up, -dx * ROTATE_SPEED);
+    // Arrastre horizontal: gira alrededor del eje vertical FIJO del mundo (no del "up"
+    // actual de la cámara). Rotamos tanto "offset" como "up" con el mismo giro para
+    // mantener la inclinación relativa que ya hubiera, pero sin que un arrastre "de
+    // costado" sume inclinación nueva (que era la causa de que se fuera para abajo).
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(WORLD_UP, -dx * ROTATE_SPEED);
     offset.applyQuaternion(qYaw);
+    up.applyQuaternion(qYaw);
 
-    // IMPORTANTE: recalculamos "right" recién ACÁ, con el "forward" ya actualizado
-    // por el yaw. Si se usara el "right" de antes del yaw (bug anterior), el pitch
-    // quedaba levemente desalineado y cada arrastre diagonal (lo normal al deslizar
-    // el dedo) sumaba una rotación de más, inclinando el cubo de a poco con el tiempo.
+    // Recalculamos "right" con el "forward" ya actualizado por el yaw.
     const forward = offset.clone().normalize();
     const right = computeRight(forward);
 
