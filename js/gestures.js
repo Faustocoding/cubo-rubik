@@ -106,7 +106,16 @@ export function attachControls({ camera, canvas, cubeGroup, cube, target = new T
     // actual de la cámara). Rotamos tanto "offset" como "up" con el mismo giro para
     // mantener la inclinación relativa que ya hubiera, pero sin que un arrastre "de
     // costado" sume inclinación nueva (que era la causa de que se fuera para abajo).
-    const qYaw = new THREE.Quaternion().setFromAxisAngle(WORLD_UP, -dx * ROTATE_SPEED);
+    //
+    // Cuando la vista queda "boca abajo" respecto al mundo (ej: volteaste el cubo
+    // para poner el amarillo arriba), el "up" actual apunta casi al revés del eje
+    // fijo del mundo. En ese caso, girar siempre en el mismo sentido alrededor del
+    // eje del mundo se ve invertido para quien mira desde "abajo" — así que
+    // invertimos el sentido del arrastre horizontal para que siga sintiéndose
+    // natural (arrastrar a la derecha gira hacia la derecha) sin importar cómo esté
+    // orientado el cubo.
+    const yawSign = up.dot(WORLD_UP) >= 0 ? 1 : -1;
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(WORLD_UP, -dx * ROTATE_SPEED * yawSign);
     offset.applyQuaternion(qYaw);
     up.applyQuaternion(qYaw);
 
